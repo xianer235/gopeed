@@ -1,0 +1,47 @@
+name: build-web-local
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.4"
+  FLUTTER_VERSION: "3.41.6"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Build flutter web
+        run: |
+          cd ui/flutter
+          flutter build web --no-web-resources-cdn --dart-define="UPDATE_CHANNEL=docker"
+          dart ../../.github/workflows/scripts/flutter_local_font.dart
+          cd ../..
+          rm -rf cmd/web/dist
+          cp -r ui/flutter/build/web cmd/web/dist
+      - name: Build linux binaries
+        run: |
+          mkdir -p dist
+          export CGO_ENABLED=0
+          for goarch in amd64 arm64; do
+            GOOS=linux GOARCH=$goarch go build -tags nosqlite,web \
+              -ldflags="-s -w -X github.com/GopeedLab/gopeed/pkg/base.Version=2.0.0-htmllogin -X github.com/GopeedLab/gopeed/pkg/base.InDocker=true" \
+              -o dist/gopeed-linux-$goarch ./cmd/web
+          done
+          ls -lh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gopeed-htmllogin-linux
+          path: dist/gopeed-linux-*
+          if-no-files-found: error
