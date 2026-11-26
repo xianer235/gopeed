@@ -2,13 +2,20 @@ name: build-web-local
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag pushed to GHCR"
+        required: false
+        default: "htmllogin"
 
 permissions:
   contents: read
+  packages: write
 
 env:
   GO_VERSION: "1.27.4"
   FLUTTER_VERSION: "3.41.6"
+  IMAGE: ghcr.io/xianer235/gopeed
 
 jobs:
   build:
@@ -44,4 +51,25 @@ jobs:
         with:
           name: gopeed-htmllogin-linux
           path: dist/gopeed-linux-*
+          if-no-files-found: error
+      - name: Build image
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          mkdir -p image
+          cp dist/gopeed-linux-amd64 image/gopeed
+          printf 'FROM liwei2633/gopeed:latest\nCOPY gopeed /app/gopeed\n' > image/Dockerfile
+          docker build -t "$IMAGE:$tag" image
+      - name: Push to GHCR
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:$tag"
+      - name: Save image tarball
+        run: |
+          docker save "$IMAGE:${{ github.event.inputs.tag }}" | gzip -1 > gopeed-image-amd64.tar.gz
+          ls -lh gopeed-image-amd64.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gopeed-image-amd64
+          path: gopeed-image-amd64.tar.gz
           if-no-files-found: error
